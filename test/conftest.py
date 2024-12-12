@@ -1,4 +1,5 @@
 import os
+from collections import namedtuple
 
 import pytest
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -32,17 +33,32 @@ def database(test_client):
     db.drop_all()
 
 
+TxInfo = namedtuple("TxInfo", "connection,transaction")
+
+
 @pytest.fixture(autouse=True)
 def enable_transactional_tests(database):
-    """https://docs.sqlalchemy.org/en/20/orm/session_transaction.html#joining-a-session-into-an-external-transaction-such-as-for-test-suites"""
-    binds = {m: database.session.get_bind(m) for m in database.Model.registry.mappers}
+    """
+    Set up a transaction for each bind_key. The transaction will be rolled back at the end of each test.
+    This allows each test to begin with a clean database.
 
-    connection = database.engine.connect()
-    transaction = connection.begin()
+    Helpful links:
+    https://docs.sqlalchemy.org/en/20/orm/session_transaction.html#joining-a-session-into-an-external-transaction-such-as-for-test-suites
+    https://github.com/sqlalchemy/sqlalchemy/discussions/12176#discussioncomment-11549627
+    """
+    tx_per_bind = {}
+    for bind_key, engine in database.engines.items():
+        connection = engine.connect()
+        transaction = connection.begin()
+        tx_per_bind[bind_key] = TxInfo(connection, transaction)
+
+    binds = {}
+    for mapper in database.Model.registry.mappers:
+        bind_key = getattr(mapper.class_, "__bind_key__", None)
+        binds[mapper] = tx_per_bind[bind_key].connection
 
     database.session = scoped_session(
         session_factory=sessionmaker(
-            bind=connection,
             binds=binds,
             join_transaction_mode="create_savepoint",
         )
@@ -51,8 +67,9 @@ def enable_transactional_tests(database):
     yield
 
     database.session.close()
-    transaction.rollback()
-    connection.close()
+    for tx in tx_per_bind.values():
+        tx.transaction.rollback()
+        tx.connection.close()
 
 
 @pytest.fixture
