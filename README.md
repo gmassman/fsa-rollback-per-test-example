@@ -5,12 +5,13 @@ Most notably, tests are isolated using database transactions that can be rolled 
 This allows each test to start with a clean test database.
 The example here works with PostgreSQL, but the pattern should be applicable to all databases SQLAlchemy 2.x supports.
 
-# Setup
+## Setup
 
-```
+```bash
 python -m venv .venv
 source .venv/bin/activate
-pipenv install --dev --ignore-pipfile
-initdb fsa_rollback_per_test
+pipenv install --dev
+createdb fsa_rollback_per_test_user
+createdb fsa_rollback_per_test_device
 pytest
 ```
