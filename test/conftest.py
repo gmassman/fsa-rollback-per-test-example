@@ -36,8 +36,9 @@ def database(test_app):
     with test_app.app_context():
         db.create_all()
 
-        yield db
+    yield db
 
+    with test_app.app_context():
         db.drop_all()
 
 
